@@ -27,11 +27,11 @@ export interface LoanApplication {
   city: string;
 
   // Step 2: Financial Data & Loan Request
-  monthlyIncome?: number;
-  monthlyExpenses?: number;
-  requestedAmount?: number;
-  requestedTermMonths?: number;
-  loanPurpose: string;
+  monthlyIncome: number | null;
+  monthlyExpenses: number | null;
+  requestedAmount: number | null;
+  requestedTermMonths: number | null;
+  loanPurpose?: string;
   dataTreatmentAccepted: boolean;
 
   // Simulation Result

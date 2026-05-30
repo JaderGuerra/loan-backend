@@ -7,10 +7,10 @@ import { randomUUID } from 'crypto';
 import { CreateLoanApplicationDto } from './dto/create-loan.dto';
 import { LoanApplicationStatus } from './types/loanStatus';
 import { numberReference } from './utils/referenceNumber';
-import type { Channel, History, LoanApplication } from './types/loan';
 import { fakeDataTest } from './mock/fakeData';
 import { CreateFinancialAppDto } from './dto/create-financial.dto';
 import { CreateCompleteLoanApplicationDto } from './dto/create-complete-loanApp.dto';
+import type { Channel, History, LoanApplication } from './types/loan';
 
 @Injectable()
 export class LoanApplicationsService {
@@ -39,65 +39,91 @@ export class LoanApplicationsService {
       referenceNumber: numberReference(),
       status,
 
-      ...basicData,
-      ...financialData,
+      // Basic Data
+      channel: basicData.channel,
+      documentType: basicData.documentType,
+      documentNumber: basicData.documentNumber,
+      fullName: basicData.fullName,
+      phone: basicData.phone,
+      email: basicData.email,
+      city: basicData.city,
+      loanPurpose: basicData.loanPurpose ?? '',
+      dataTreatmentAccepted: basicData.dataTreatmentAccepted ?? false,
 
-      loanPurpose: basicData.loanPurpose || '',
-      dataTreatmentAccepted: basicData.dataTreatmentAccepted || false,
+      //financie data
+      monthlyIncome: financialData?.monthlyIncome ?? null,
+      monthlyExpenses: financialData?.monthlyExpenses ?? null,
+      requestedAmount: financialData?.requestedAmount ?? null,
+      requestedTermMonths: financialData?.requestedTermMonths ?? null,
 
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
 
       history: [
-        this.createHistoryLog(
-          status,
-          status === LoanApplicationStatus.DRAFT
-            ? 'Application initialized as Draft'
-            : 'Application submitted for evaluation',
-          basicData.channel,
-        ),
+        this.createHistoryLog(status, 'Application created', basicData.channel),
       ],
     };
   }
 
-  private checkIfItIsViable(app: LoanApplication, status: boolean) {
-    if (status) {
-      app.status = LoanApplicationStatus.OFFER_GENERATED;
-      app.simulationResult = {
-        isViable: true,
-        // approvedAmount: app.requestedAmount,
-        interestRate: 1.45,
-        //  monthlyInstallment: Math.round((app.requestedAmount / app.requestedTermMonths) * 1.1,),
-      };
-      app.history.push(
-        this.createHistoryLog(
-          app.status,
-          'Credit pre-approved successfully',
-          app.channel,
-        ),
-      );
-    } else {
-      app.status = LoanApplicationStatus.REJECTED;
-      app.simulationResult = {
+  calculateOffer(input: {
+    monthlyIncome: number;
+    monthlyExpenses: number;
+    requestedAmount: number;
+    requestedTermMonths: number;
+  }): LoanApplication['simulationResult'] {
+    const {
+      monthlyIncome,
+      monthlyExpenses,
+      requestedAmount,
+      requestedTermMonths,
+    } = input;
+
+    const maxTerm = 72;
+
+    if (requestedTermMonths > maxTerm) {
+      return {
         isViable: false,
-        rejectionReason:
-          'Debt-to-income ratio too high for the requested amount.',
+        rejectionReason: 'Term exceeds maximum allowed (72 months)',
       };
-      app.history.push(
-        this.createHistoryLog(
-          app.status,
-          'Credit rejected due to financial capacity',
-          app.channel,
-        ),
-      );
     }
+
+    const disposableIncome = monthlyIncome - monthlyExpenses;
+
+    if (disposableIncome <= 0) {
+      return {
+        isViable: false,
+        rejectionReason: 'No disposable income',
+      };
+    }
+
+    const monthlyRate = Math.pow(1 + 0.145, 1 / 12) - 1;
+
+    const r = monthlyRate;
+    const n = requestedTermMonths;
+    const P = requestedAmount;
+
+    const installment = (P * r) / (1 - Math.pow(1 + r, -n));
+
+    const maxAffordable = disposableIncome * 0.4;
+
+    const isViable = installment <= maxAffordable;
+
+    return {
+      isViable,
+      approvedAmount: isViable ? P : undefined,
+      interestRate: 0.145,
+      monthlyInstallment: Number(installment.toFixed(2)),
+      rejectionReason: isViable
+        ? undefined
+        : 'Installment exceeds affordability threshold',
+    };
   }
 
+  //We created the application partially
   create(dto: CreateLoanApplicationDto): LoanApplication {
     const application = this.buildApplication(dto, LoanApplicationStatus.DRAFT);
 
     this.applications.push(application);
-
     return application;
   }
 
@@ -109,36 +135,8 @@ export class LoanApplicationsService {
     );
 
     this.applications.push(application);
-
     return application;
   }
-
-  /* create(dto: CreateLoanApplicationDto): LoanApplication {
-    const id = randomUUID();
-    const referenceNumber = numberReference();
-    const initialStatus = LoanApplicationStatus.DRAFT;
-
-    const newApplication: LoanApplication = {
-      id,
-      referenceNumber,
-      status: initialStatus,
-      ...dto,
-      loanPurpose: dto.loanPurpose || '',
-      dataTreatmentAccepted: dto.dataTreatmentAccepted || false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      history: [
-        this.createHistoryLog(
-          initialStatus,
-          'Application initialized as Draft',
-          dto.channel,
-        ),
-      ],
-    };
-
-    this.applications.push(newApplication);
-    return newApplication;
-  } */
 
   findAll(filters: {
     status?: LoanApplicationStatus;
@@ -148,13 +146,15 @@ export class LoanApplicationsService {
     return this.applications.filter((app) => {
       if (filters.status && app.status !== filters.status) return false;
       if (filters.channel && app.channel !== filters.channel) return false;
+
       if (filters.search) {
-        const term = filters.search.toLocaleLowerCase().trim();
+        const term = filters.search.toLowerCase().trim();
         return (
-          app.fullName.toLocaleLowerCase().includes(term) ||
+          app.fullName.toLowerCase().includes(term) ||
           app.documentNumber.includes(term)
         );
       }
+
       return true;
     });
   }
@@ -165,7 +165,15 @@ export class LoanApplicationsService {
     return app;
   }
 
-  simulateOffer(id: string): LoanApplication {
+  simulateOffer(
+    id: string,
+    payload: {
+      monthlyIncome: number;
+      monthlyExpenses: number;
+      requestedAmount: number;
+      requestedTermMonths: number;
+    },
+  ): LoanApplication {
     const app = this.findOne(id);
 
     if (app.status !== LoanApplicationStatus.DRAFT) {
@@ -174,17 +182,26 @@ export class LoanApplicationsService {
       );
     }
 
-    app.status = LoanApplicationStatus.PROCESSING_SIMULATION;
+    const result = this.calculateOffer(payload);
+
+    app.simulationResult = result;
+
+    app.status = result?.isViable
+      ? LoanApplicationStatus.PROCESSING_SIMULATION
+      : LoanApplicationStatus.REJECTED;
+
     app.history.push(
-      this.createHistoryLog(app.status, 'Running risk evaluation', app.channel),
+      this.createHistoryLog(
+        app.status,
+        result?.isViable
+          ? 'Simulation approved'
+          : (result?.rejectionReason ?? 'Rejected'),
+        'SELF_SERVICE',
+      ),
     );
 
-    // const capacity = app.monthlyIncome - app.monthlyExpenses;
-    // const isViable = capacity > app.requestedAmount / app.requestedTermMonths;
-
-    // this.checkIfItIsViable(app, isViable);
-
     app.updatedAt = new Date().toISOString();
+
     return app;
   }
 
@@ -194,7 +211,9 @@ export class LoanApplicationsService {
     if (app.status !== LoanApplicationStatus.OFFER_GENERATED) {
       throw new BadRequestException('No approved offer to finalize');
     }
+
     app.status = LoanApplicationStatus.PENDING_VALIDATION;
+
     app.history.push(
       this.createHistoryLog(
         app.status,
@@ -202,14 +221,17 @@ export class LoanApplicationsService {
         app.channel,
       ),
     );
+
     app.updatedAt = new Date().toISOString();
     return app;
   }
 
   abandon(id: string, reason: string): LoanApplication {
     const app = this.findOne(id);
+
     app.status = LoanApplicationStatus.ABANDONED;
     app.abandonmentReason = reason;
+
     app.history.push(
       this.createHistoryLog(
         app.status,
@@ -217,6 +239,7 @@ export class LoanApplicationsService {
         app.channel,
       ),
     );
+
     app.updatedAt = new Date().toISOString();
     return app;
   }
@@ -227,45 +250,22 @@ export class LoanApplicationsService {
   ): LoanApplication {
     const app = this.findOne(id);
 
-    app.monthlyIncome = dto.monthlyIncome;
-    app.monthlyExpenses = dto.monthlyExpenses;
-    app.requestedAmount = dto.requestedAmount;
-    app.requestedTermMonths = dto.requestedTermMonths;
+    Object.assign(app, {
+      monthlyIncome: dto.monthlyIncome,
+      monthlyExpenses: dto.monthlyExpenses,
+      requestedAmount: dto.requestedAmount,
+      requestedTermMonths: dto.requestedTermMonths,
+      updatedAt: new Date().toISOString(),
+    });
 
-    app.updatedAt = new Date().toISOString();
+    app.history.push(
+      this.createHistoryLog(
+        app.status,
+        'Financial information updated',
+        app.channel,
+      ),
+    );
 
     return app;
   }
-
-  /*  createComplete(dto: CreateCompleteLoanApplicationDto): LoanApplication {
-     const id = randomUUID();
-     const referenceNumber = numberReference();
-     const initialStatus = LoanApplicationStatus.DRAFT;
- 
-     const newApplication: LoanApplication = {
-       id,
-       referenceNumber,
-       status: initialStatus,
- 
-       ...dto.basicData,
-       ...dto.financialData,
- 
-       loanPurpose: dto.basicData.loanPurpose || '',
-       dataTreatmentAccepted: dto.basicData.dataTreatmentAccepted || false,
- 
-       createdAt: new Date().toISOString(),
-       updatedAt: new Date().toISOString(),
- 
-       history: [
-         this.createHistoryLog(
-           initialStatus,
-           'Complete application created',
-           dto.basicData.channel,
-         ),
-       ],
-     };
- 
-     this.applications.push(newApplication);
-     return newApplication;
-   } */
 }

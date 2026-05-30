@@ -1,4 +1,4 @@
-import { IsNumber, Min } from 'class-validator';
+import { IsNumber, Max, Min } from 'class-validator';
 
 export class CreateFinancialAppDto {
   @IsNumber()
@@ -10,10 +10,12 @@ export class CreateFinancialAppDto {
   monthlyExpenses!: number;
 
   @IsNumber()
-  @Min(0)
+  @Min(100000)
+  @Max(50000000)
   requestedAmount!: number;
 
   @IsNumber()
-  @Min(1)
+  @Min(6)
+  @Max(72)
   requestedTermMonths!: number;
 }

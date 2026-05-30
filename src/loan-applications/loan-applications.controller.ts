@@ -22,6 +22,11 @@ export class LoanApplicationsController {
     return this.service.create(dto);
   }
 
+  @Post('complete')
+  createComplete(@Body() dto: CreateCompleteLoanApplicationDto) {
+    return this.service.createComplete(dto);
+  }
+
   @Get()
   findAll(
     @Query('status') status?: LoanApplicationStatus,
@@ -37,8 +42,8 @@ export class LoanApplicationsController {
   }
 
   @Post(':id/simulate')
-  simulate(@Param('id') id: string) {
-    return this.service.simulateOffer(id);
+  simulate(@Param('id') id: string, @Body() body: CreateFinancialAppDto) {
+    return this.service.simulateOffer(id, body);
   }
 
   @Patch(':id/finalize')
@@ -57,10 +62,5 @@ export class LoanApplicationsController {
     @Body() dto: CreateFinancialAppDto,
   ) {
     return this.service.updateFinancialInformation(id, dto);
-  }
-
-  @Post('complete')
-  createComplete(@Body() dto: CreateCompleteLoanApplicationDto) {
-    return this.service.createComplete(dto);
   }
 }
