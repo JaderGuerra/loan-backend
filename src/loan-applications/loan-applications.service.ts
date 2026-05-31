@@ -176,12 +176,6 @@ export class LoanApplicationsService {
   ): LoanApplication {
     const app = this.findOne(id);
 
-    if (app.status !== LoanApplicationStatus.PROCESSING_SIMULATION) {
-      throw new BadRequestException(
-        'Simulation can only be run on PROCESSING_SIMULATION status',
-      );
-    }
-
     const result = this.calculateOffer(payload);
 
     app.simulationResult = result;
