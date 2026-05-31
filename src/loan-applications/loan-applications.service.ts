@@ -176,9 +176,9 @@ export class LoanApplicationsService {
   ): LoanApplication {
     const app = this.findOne(id);
 
-    if (app.status !== LoanApplicationStatus.DRAFT) {
+    if (app.status !== LoanApplicationStatus.PROCESSING_SIMULATION) {
       throw new BadRequestException(
-        'Simulation can only be run on DRAFT status',
+        'Simulation can only be run on PROCESSING_SIMULATION status',
       );
     }
 
@@ -262,6 +262,25 @@ export class LoanApplicationsService {
       this.createHistoryLog(
         app.status,
         'Financial information updated',
+        app.channel,
+      ),
+    );
+
+    return app;
+  }
+
+  updateStatus(id: string, status: LoanApplicationStatus): LoanApplication {
+    const app = this.findOne(id);
+
+    const previousStatus = app.status;
+
+    app.status = status;
+    app.updatedAt = new Date().toISOString();
+
+    app.history.push(
+      this.createHistoryLog(
+        status,
+        `Status changed from ${previousStatus} to ${status}`,
         app.channel,
       ),
     );

@@ -63,4 +63,12 @@ export class LoanApplicationsController {
   ) {
     return this.service.updateFinancialInformation(id, dto);
   }
+
+  @Patch(':id/status')
+  updateStatus(
+    @Param('id') id: string,
+    @Body('status') status: LoanApplicationStatus,
+  ) {
+    return this.service.updateStatus(id, status);
+  }
 }
