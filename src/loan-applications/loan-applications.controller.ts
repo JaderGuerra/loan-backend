@@ -41,6 +41,11 @@ export class LoanApplicationsController {
     return this.service.findOne(id);
   }
 
+  @Get('by-document/:document')
+  findOneByDocuemnt(@Param('document') id: string) {
+    return this.service.findOneByDocument(id);
+  }
+
   @Post(':id/simulate')
   simulate(@Param('id') id: string, @Body() body: CreateFinancialAppDto) {
     return this.service.simulateOffer(id, body);

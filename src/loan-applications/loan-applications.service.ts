@@ -165,6 +165,12 @@ export class LoanApplicationsService {
     return app;
   }
 
+  findOneByDocument(document: string): LoanApplication {
+    const app = this.applications.find((a) => a.documentNumber === document);
+    if (!app) throw new NotFoundException('Application not found');
+    return app;
+  }
+
   simulateOffer(
     id: string,
     payload: {
